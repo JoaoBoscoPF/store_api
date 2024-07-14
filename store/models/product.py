@@ -34,15 +34,29 @@ class ProductModel(ProductIn, CreateBaseModel):
 
     def update(self, **kwargs):
         updated_fields = {k: v for k, v in kwargs.items()}
-        updated_fields['updated_at'] = datetime.now()
-        result = collection.update_one({'_id': self.id}, {'$set': updated_fields})
-        if result.modified_count:
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-            self.updated_at = updated_fields['updated_at']
-            print(f'Produto com ID {self.id} atualizado')
-        else:
-            print(f'Nenhuma atualização foi feita para o produto com ID {self.id}')
+        updated_fields['updated_at'] = datetime.now()  # Atualiza o campo updated_at para o tempo atual
+        
+        try:
+            result = collection.update_one({'_id': self.id}, {'$set': updated_fields})
+            if result.matched_count == 0:
+                raise ProductNotFoundError(f'Produto com ID {self.id} não encontrado.')
+            
+            if result.modified_count:
+                # Atualiza os atributos do objeto com os novos valores
+                for key, value in kwargs.items():
+                    setattr(self, key, value)
+                self.updated_at = updated_fields['updated_at']  # Atualiza o atributo updated_at do objeto
+                print(f'Produto com ID {self.id} atualizado no nosso sistema!')
+            else:
+                print(f'Nenhuma atualização feita para o produto com ID {self.id}')
+        
+        except PyMongoError as e:
+            raise DatabaseError(f'Erro ao acessar o banco de dados: {str(e)}')
+
+    class ProductNotFoundError(Exception):
+        def __init__(self, message="Produto não encontrado."):
+            self.message = message
+            super().__init__(self.message)
 
     def delete(self):
         result = collection.delete_one({'_id': self.id})
@@ -61,10 +75,18 @@ class ProductModel(ProductIn, CreateBaseModel):
 
     @classmethod
     def list_all(cls):
-        products = []
-        for product_data in collection.find():
-            products.append(cls(**product_data))
-        return products
+    products = []
+    filter_query = {
+        'price': {
+            '$gt': Decimal128('5000'),
+            '$lt': Decimal128('8000')
+        }
+    }
+    for product_data in collection.find(filter_query):
+        product_data['price'] = Decimal(product_data['price'].to_decimal())
+        products.append(cls(**product_data))
+    return products
+
 
     def __repr__(self):
         return f"<ProductModel id={self.id}, name={self.name}>"
